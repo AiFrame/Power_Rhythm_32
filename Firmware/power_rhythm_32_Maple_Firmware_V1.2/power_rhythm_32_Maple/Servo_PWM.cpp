@@ -21,7 +21,7 @@ Servo_PWM::Servo_PWM()
 
 }
 
-const char *VERSION = "POWER RHYTHM 32 V2.03";
+const char *VERSION = "POWER RHYTHM 32 V1.2";
 const char *A_MODE[2] = {"default mode", "trapezoidal_curve mode"};
 
 unsigned int counter_20ms = 0;                          //counter for real time/20ms
