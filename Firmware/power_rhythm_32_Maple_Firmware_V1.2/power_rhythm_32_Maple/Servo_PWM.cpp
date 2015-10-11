@@ -26,6 +26,7 @@ const char *A_MODE[2] = {"default mode", "trapezoidal_curve mode"};
 
 unsigned int counter_20ms = 0;                          //counter for real time/20ms
 unsigned char Timer_state = 1;                          //Timer state On/Off
+unsigned char Timer_state_flag = 1;                     //Timer state flag On/Off
 
 unsigned char line1 = 1;                                // 缓存存入口与出口之间的距离，即当前缓存中有多少个没有执行的PWM数据
 unsigned char point_now = 0;                            // 标记PWM数据组缓存出口位置，即取数位置
@@ -201,6 +202,8 @@ void Servo_PWM::Servo_PWM_initialize(void)
     timer4.attachCompare1Interrupt(Servo_PWM_callback4);
     timer4.refresh();
     timer4.resume();
+    
+    iwdg_init(IWDG_PRE_32, 1000);   //watchdog
 }
 
 void Servo_PWM::Set_timer_state(unsigned char state)
@@ -211,7 +214,6 @@ void Servo_PWM::Set_timer_state(unsigned char state)
        timer2.pause();
        timer3.pause();
        timer4.pause();
-       Timer_state = 0;
     }
     else
     {
@@ -219,8 +221,8 @@ void Servo_PWM::Set_timer_state(unsigned char state)
        timer2.resume();
        timer3.resume();
        timer4.resume();
-       Timer_state = 1;
     }
+    Timer_state = state;
 }
 
 // 定时器1的中断服务函数，用于产生1~8的PWM信号
@@ -453,13 +455,18 @@ void Servo_PWM::Servo_PWM_callback1()
             timer1.refresh();
 	    flag_vpwm = 1;
 	    order = 0;
-            break;
-        default: 
-            order = 0;
             if (counter_20ms < PWM_time_out)
             {
                 counter_20ms++;
             }
+            else
+            {
+               counter_20ms = 0;
+               Timer_state_flag = 0;
+            }
+            break;
+        default: 
+            order = 0;
     }  
     order++;	  
 }
@@ -1427,6 +1434,8 @@ void Servo_PWM::Serial_process(USBSerial *serial)
         {
             flag_RecFul = 1;
             pointer=0;
+            counter_20ms = 0;
+            Timer_state_flag = 1;
         }
         digitalWrite(BOARD_LED_PIN, HIGH);
     } 
@@ -1439,6 +1448,7 @@ void Servo_PWM::Serial_process(USBSerial *serial)
             flag_RecFul = 1;
             pointer = 0;
             counter_20ms = 0;
+            Timer_state_flag = 1;
         }
         digitalWrite(BOARD_LED_PIN, HIGH);
     } 
@@ -1727,7 +1737,7 @@ void Servo_PWM::u16Tou8(unsigned char datatemp8[],unsigned int datatemp16[])
   }
 }
 
-void Servo_PWM::Read_Data()
+void Servo_PWM::Read_Data(void)
 {
   unsigned char datatemp[67];
   if((Offline_group_num > 0) && (Offline_group_num <= Group_MAX_NUM)&&(Read_num != 0))
@@ -1864,16 +1874,19 @@ void Servo_PWM::Servo_process(void)
     flag_vpwm=0;
   }
   Serial_process(&SerialUSB);
-  if(flag_RecFul == 1)
+  if (flag_RecFul == 1)
   {
-    Deal_commands(redata);
-    Uart_Cmd();
-    flag_RecFul = 0;
+     Deal_commands(redata);
+     Uart_Cmd();
+     flag_RecFul = 0;
   } 
-  if (counter_20ms >= PWM_time_out)
+  if (Timer_state_flag != Timer_state)
   {
-     
+     if (flag_Go == 0)
+        Set_timer_state(Timer_state_flag);
   }
+  
+  iwdg_feed();    //feed watchdog
   /*u16Tou8(datatemp2,datatemp1);
   AT24CXX_Write( 11 , datatemp2, 66 );;
   delay(5);

@@ -15,6 +15,7 @@
 #include <WProgram.h>
 #include <usb_serial.h>
 #include "HardWire.h"
+#include "iwdg.h"
 
 #define PWM_OUR_TIME 20000/8   //周期  20000US=20MS 几路PWM :8   
 #define PWM_Gain 5           //误差增益
@@ -223,7 +224,7 @@ public:
   void Servo_PWM_initialize(void);
   void Set_timer_state(unsigned char state);
   void PWM_change(void);
-  void Read_Data();
+  void Read_Data(void);
   void Servo_process(void);
   unsigned char AT24CXX_ReadOneByte(unsigned int);
   void AT24CXX_WriteOneByte(unsigned int, unsigned char);
