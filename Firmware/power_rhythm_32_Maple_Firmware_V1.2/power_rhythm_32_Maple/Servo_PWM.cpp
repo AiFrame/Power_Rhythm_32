@@ -1880,10 +1880,12 @@ void Servo_PWM::Servo_process(void)
      Uart_Cmd();
      flag_RecFul = 0;
   } 
-  if (Timer_state_flag != Timer_state)
+  if ((flag_Go == 0)&&(Offline_group_num == 0))
   {
-     if (flag_Go == 0)
+     if (Timer_state_flag != Timer_state)
+     {
         Set_timer_state(Timer_state_flag);
+     }
   }
   
   iwdg_feed();    //feed watchdog
