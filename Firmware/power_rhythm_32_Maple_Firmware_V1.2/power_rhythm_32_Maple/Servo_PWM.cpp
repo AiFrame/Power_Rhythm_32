@@ -1174,7 +1174,7 @@ void Servo_PWM::AT24CXX_WriteOneByte(unsigned int WriteAddr, unsigned char DataT
 }
 
 // 从AT24CXX的指定寄存器地址ReadAddr读取NumToRead字节存入数组pBuffer
-void Servo_PWM:: AT24CXX_Read(unsigned int ReadAddr, unsigned char *pBuffer, unsigned int NumToRead)
+void Servo_PWM::AT24CXX_Read(unsigned int ReadAddr, unsigned char *pBuffer, unsigned int NumToRead)
 {
     /* if(EE_TYPE>AT24C16)
     {
@@ -1221,15 +1221,15 @@ unsigned char Servo_PWM::AT24CXX_Check(void)
 {
     unsigned char temp;
     temp = AT24CXX_ReadOneByte(Check_Addr);                                              //避免每次开机都写AT24CXX			   
-    if(temp == 0X55)
+    if(temp == 0X77)
     {
         return 0;
     }		   
     else                                                                                 //排除第一次初始化的情况
     {
-        AT24CXX_WriteOneByte(Check_Addr,0X55);
+        AT24CXX_WriteOneByte(Check_Addr,0X77);
         temp = AT24CXX_ReadOneByte(Check_Addr);	  
-        if(temp == 0X55)
+        if(temp == 0X77)
         {
             return 0;
         }
@@ -1778,8 +1778,8 @@ void Servo_PWM::Uart_Cmd(void)
   switch(UartCmd)
   {
     case Cmd_PC_Link:
-      SerialUSB.print(VERSION);
-      Serial1.print(VERSION);
+      SerialUSB.println(VERSION);
+      Serial1.println(VERSION);
     break;
     case Cmd_Clear:
       AT24CXX_WriteOneByte( Clear_Flag_ADDR, 0xff );
@@ -1887,7 +1887,7 @@ void Servo_PWM::Servo_process(void)
         Set_timer_state(Timer_state_flag);
      }
   }
-  
+
   iwdg_feed();    //feed watchdog
   /*u16Tou8(datatemp2,datatemp1);
   AT24CXX_Write( 11 , datatemp2, 66 );;
