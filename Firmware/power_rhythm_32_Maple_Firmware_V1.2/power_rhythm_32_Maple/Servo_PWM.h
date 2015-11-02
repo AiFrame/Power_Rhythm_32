@@ -226,10 +226,10 @@ public:
   void PWM_change(void);
   void Read_Data(void);
   void Servo_process(void);
-  unsigned char AT24CXX_ReadOneByte(unsigned int);
-  void AT24CXX_WriteOneByte(unsigned int, unsigned char);
-  void AT24CXX_Read(unsigned int,unsigned char *,unsigned int);
-  void AT24CXX_Write(unsigned int,unsigned char *,unsigned int);
+  unsigned char Wire2_ReadOneByte(unsigned char, unsigned int);
+  void Wire2_WriteOneByte(unsigned char, unsigned int, unsigned char);
+  void Wire2_Read(unsigned char, unsigned int,unsigned char *,unsigned int);
+  void Wire2_Write(unsigned char, unsigned int,unsigned char *,unsigned int);
   unsigned char AT24CXX_Check(void);
   void u8Tou16(unsigned char *,unsigned int *);
   void u16Tou8(unsigned char *,unsigned int *);

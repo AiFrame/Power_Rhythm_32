@@ -14,7 +14,7 @@ HardwareTimer timer1(1);
 HardwareTimer timer2(2);
 HardwareTimer timer3(3);
 HardwareTimer timer4(4);
-HardWire WirePort(2, I2C_FAST_MODE);
+HardWire Wire2(2, I2C_FAST_MODE);
 
 Servo_PWM::Servo_PWM()
 {
@@ -66,6 +66,8 @@ unsigned char aclrt_mode = Trapezoidal_curve;           // 加速模式
 
 unsigned char pwm_num;                                  // PWM序号
 unsigned char numtemp = 0;                              // PWM数据位于对应PWM数据组的行数
+unsigned int Battery_state = 3300;                      // Battery state
+unsigned int battery_temp = 0;
 
 
 unsigned int UartRec[33] = {100, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500,      // 串口接收的PWM数据
@@ -127,25 +129,55 @@ void Servo_PWM::Servo_PWM_initialize(void)
     pinMode(AD0, INPUT_ANALOG);
     pinMode(AD1, INPUT_ANALOG);
     
-    Serial1.begin(115200);                                                           // 串口1的初始化
-    
-    WirePort.begin();                                                                 // IIC总线初始化
+    Serial1.begin(115200);         // 串口1的初始化
+    Battery_state = analogRead(AD0);
+    if(Battery_state < 50)                                                            // 检查Flash的连接
+    {  
+        SerialUSB.println("Battery no found! Check the connection.");
+        Serial1.println("Battery no found! Check the connection.");
+        SerialUSB.println("Running without battery!");
+        Serial1.println("Running without battery!");
+    }
+    else
+    {
+        while(Battery_state >= 50)                                                            // 检查Flash的连接
+        {  
+            toggleLED();
+            delay(750);
+            battery_temp = analogRead(AD0);
+            if (abs(Battery_state - battery_temp) > 80)
+            {
+                SerialUSB.println("Battery no found! Check the connection.");
+                Serial1.println("Battery no found! Check the connection.");
+                SerialUSB.println("Running without battery!");
+                Serial1.println("Running without battery!");
+                break;
+            }
+            else if (battery_temp < 2300)
+            {
+                SerialUSB.println("Battery low! Charge the battery.");
+                Serial1.println("Battery low! Charge the battery.");
+            }
+            Battery_state = battery_temp;
+        }
+    }
+    Wire2.begin();                                                                 // IIC总线初始化
     while(AT24CXX_Check())                                                            // 检查Flash的连接
     {  
-        SerialUSB.println("FLASH no found!check the connection.");
-        Serial1.println("FLASH no found!check the connection.");
+        SerialUSB.println("FLASH no found! Check the connection.");
+        Serial1.println("FLASH no found! Check the connection.");
     }
-    Offline_group_num = 0;//AT24CXX_ReadOneByte(Offline_Flag_ADDR);                        // 读脱机PWM数据组号，如不为0则脱机运行Offline_group_num组。
+    Offline_group_num = 0;//Wire2_ReadOneByte(Offline_Flag_ADDR);                        // 读脱机PWM数据组号，如不为0则脱机运行Offline_group_num组。
     if (Offline_group_num == 0xff)                                                     // 校验读出的Flash数据 
     {
         Offline_group_num = 0;
     }
-    All_Offline_Group_num = AT24CXX_ReadOneByte(All_Group_NUM_ADDR);                   // 读取脱机PWM数据组总数
+    All_Offline_Group_num = Wire2_ReadOneByte(I2CBASEADDR, All_Group_NUM_ADDR);                   // 读取脱机PWM数据组总数
     if (All_Offline_Group_num == 0xff)                                                 // 校验读出的Flash数据
     {
         All_Offline_Group_num = 48; 
     }
-    flag_Go = AT24CXX_ReadOneByte(Circle_Flag_ADDR);                                   // 读取循环运行脱机PWM数据组标志，为1时循环更新所有PWM数据组
+    flag_Go = Wire2_ReadOneByte(I2CBASEADDR, Circle_Flag_ADDR);                                   // 读取循环运行脱机PWM数据组标志，为1时循环更新所有PWM数据组
     if (flag_Go == 0xff)                                                               // 校验读出的Flash数据
     {
         flag_Go = 0; 
@@ -156,7 +188,7 @@ void Servo_PWM::Servo_PWM_initialize(void)
     }
     if ((Offline_group_num > 0) && (Offline_group_num <= Group_MAX_NUM))                // 判断是否为有效的PWM数据组值
     {
-        Read_num = AT24CXX_ReadOneByte( Group_Length_ADDR + Offline_group_num );       // 开始读取PWM数据组中的数据
+        Read_num = Wire2_ReadOneByte( I2CBASEADDR, Group_Length_ADDR + Offline_group_num );       // 开始读取PWM数据组中的数据
         flag_iic_read_over = 0;                                                        // 表示读取结束
         delay( 5 );
     } 
@@ -166,7 +198,7 @@ void Servo_PWM::Servo_PWM_initialize(void)
         Offline_group_num = 0;
     }
     
-    AT24CXX_Read(eeprom_AddBaisc - 67, datatemp, 67);                                  // 读取初始的PWM数据
+    Wire2_Read(I2CBASEADDR, eeprom_AddBaisc - 67, datatemp, 67);                                  // 读取初始的PWM数据
     if (datatemp[66] == 0x01)                                                        // 读取成功
     {
       u8Tou16( datatemp, PWM_value_old[1] );                                           // 初始化PWM数据缓存数组的1、2行 
@@ -463,6 +495,8 @@ void Servo_PWM::Servo_PWM_callback1()
             {
                counter_20ms = 0;
                Timer_state_flag = 0;
+               battery_temp = Battery_state;
+               Battery_state = (Battery_state + analogRead(AD0))/2;
             }
             break;
         default: 
@@ -1132,104 +1166,104 @@ void Servo_PWM::Servo_PWM_callback4()
     order++;
 }
 
-// 从AT24CXX的指定寄存器地址ReadAddr读取一字节
-unsigned char Servo_PWM::AT24CXX_ReadOneByte(unsigned int ReadAddr)
+// 从Wire2的指定寄存器地址ReadAddr读取一字节
+unsigned char Servo_PWM::Wire2_ReadOneByte(unsigned char DeviceAddr, unsigned int ReadAddr)
 {
     unsigned char temp = 0XFF;
     if (EE_TYPE > AT24C16)
     {
-        WirePort.beginTransmission(I2CBASEADDR);	                                      // 发送写命令
-        WirePort.send((unsigned char)(ReadAddr >> 8));                                        // 发送寄存器地址高8位MSB write upper 8 bits to wire (by bit shifting to right)	
+        Wire2.beginTransmission(DeviceAddr);	                                      // 发送写命令
+        Wire2.send((unsigned char)(ReadAddr >> 8));                                        // 发送寄存器地址高8位MSB write upper 8 bits to wire (by bit shifting to right)	
     }
     else 
     {
-        WirePort.beginTransmission((unsigned char)(I2CBASEADDR + ((ReadAddr / 256) << 1)));   // 发送器件地址I2CBASEADDR,写数据 	 
+        Wire2.beginTransmission((unsigned char)(DeviceAddr + ((ReadAddr / 256) << 1)));   // 发送器件地址I2CBASEADDR,写数据 	 
     }
-    WirePort.send((char)(ReadAddr & 0xFF));                                                   // 发送寄存器地址低8位LSB write lower 8 bits to wire (by bit & by 0xFF)
-    WirePort.endTransmission();                                                               // 结束IIC通信end transmission on wire
-    WirePort.requestFrom((unsigned char)I2CBASEADDR, (unsigned char)1);                       // 从EEPROM取出一字节request 1 byte from EEPROM (memory location sent above)	    
-    if (WirePort.available()) 
+    Wire2.send((char)(ReadAddr & 0xFF));                                                   // 发送寄存器地址低8位LSB write lower 8 bits to wire (by bit & by 0xFF)
+    Wire2.endTransmission();                                                               // 结束IIC通信end transmission on wire
+    Wire2.requestFrom((unsigned char)DeviceAddr, (unsigned char)1);                       // 从EEPROM取出一字节request 1 byte from EEPROM (memory location sent above)	    
+    if (Wire2.available()) 
     {
-        temp = WirePort.receive();
+        temp = Wire2.receive();
     }
     return temp;
 }
 
-// 向AT24CXX的指定寄存器地址WriteAddr写入一字节数据
-void Servo_PWM::AT24CXX_WriteOneByte(unsigned int WriteAddr, unsigned char DataToWrite)
+// 向Wire2的指定寄存器地址WriteAddr写入一字节数据
+void Servo_PWM::Wire2_WriteOneByte(unsigned char DeviceAddr, unsigned int WriteAddr, unsigned char DataToWrite)
 {
     if (EE_TYPE > AT24C16)
     {
-        WirePort.beginTransmission(I2CBASEADDR); 
-        WirePort.send((unsigned char)(WriteAddr >> 8));   
+        Wire2.beginTransmission(DeviceAddr); 
+        Wire2.send((unsigned char)(WriteAddr >> 8));   
     }
     else
     {
-        WirePort.beginTransmission((unsigned char)(I2CBASEADDR + ((WriteAddr / 256) << 1))); 
+        Wire2.beginTransmission((unsigned char)(DeviceAddr + ((WriteAddr / 256) << 1))); 
     }
-    WirePort.send((char)(WriteAddr & 0xFF));	 										  		   
-    WirePort.send(DataToWrite);                                                               //发送字节							   
-    WirePort.endTransmission();
+    Wire2.send((char)(WriteAddr & 0xFF));	 										  		   
+    Wire2.send(DataToWrite);                                                               //发送字节							   
+    Wire2.endTransmission();
     delay(5); 
 }
 
-// 从AT24CXX的指定寄存器地址ReadAddr读取NumToRead字节存入数组pBuffer
-void Servo_PWM::AT24CXX_Read(unsigned int ReadAddr, unsigned char *pBuffer, unsigned int NumToRead)
+// 从Wire2的指定寄存器地址ReadAddr读取NumToRead字节存入数组pBuffer
+void Servo_PWM::Wire2_Read(unsigned char DeviceAddr, unsigned int ReadAddr, unsigned char *pBuffer, unsigned int NumToRead)
 {
     /* if(EE_TYPE>AT24C16)
     {
-        WirePort.beginTransmission(I2CBASEADDR);
-        WirePort.send((unsigned char)(ReadAddr >> 8));
+        Wire2.beginTransmission(I2CBASEADDR);
+        Wire2.send((unsigned char)(ReadAddr >> 8));
     }
     else 
-    WirePort.beginTransmission((unsigned char)(I2CBASEADDR + ((ReadAddr / 256) << 1)));  	 
-    WirePort.send((char)(ReadAddr & 0xFF));  
-    WirePort.endTransmission();
-    WirePort.requestFrom((unsigned char)I2CBASEADDR,NumToRead); */
+    Wire2.beginTransmission((unsigned char)(I2CBASEADDR + ((ReadAddr / 256) << 1)));  	 
+    Wire2.send((char)(ReadAddr & 0xFF));  
+    Wire2.endTransmission();
+    Wire2.requestFrom((unsigned char)I2CBASEADDR,NumToRead); */
     while (NumToRead--)
     {
-        *pBuffer = AT24CXX_ReadOneByte(ReadAddr);
+        *pBuffer = Wire2_ReadOneByte(DeviceAddr, ReadAddr);
         ReadAddr++;
         pBuffer++;
     }
 }
 
-// 向AT24CXX的指定寄存器地址WriteAddr写入NumToWrite字节pBuffer中的数据
-void Servo_PWM::AT24CXX_Write(unsigned int WriteAddr, unsigned char *pBuffer, unsigned int NumToWrite)
+// 向Wire2的指定寄存器地址WriteAddr写入NumToWrite字节pBuffer中的数据
+void Servo_PWM::Wire2_Write(unsigned char DeviceAddr, unsigned int WriteAddr, unsigned char *pBuffer, unsigned int NumToWrite)
 {
     /* if (EE_TYPE > AT24C16)
     {
-        WirePort.beginTransmission(I2CBASEADDR);
-        WirePort.send((unsigned char)(WriteAddr >> 8));
+        Wire2.beginTransmission(I2CBASEADDR);
+        Wire2.send((unsigned char)(WriteAddr >> 8));
     }
     else
     {
-        WirePort.beginTransmission((unsigned char)(I2CBASEADDR + ((WriteAddr / 256) << 1)));   
+        Wire2.beginTransmission((unsigned char)(I2CBASEADDR + ((WriteAddr / 256) << 1)));   
     }
-    WirePort.send((char)(WriteAddr & 0xFF));*/
+    Wire2.send((char)(WriteAddr & 0xFF));*/
     while(NumToWrite--)
     {
-        AT24CXX_WriteOneByte(WriteAddr, *pBuffer);
+        Wire2_WriteOneByte(DeviceAddr, WriteAddr, *pBuffer);
         WriteAddr++;
         pBuffer++;
     }								   
  
 }
 
-// 检查AT24CXX的连接，连接正常时返回0
+// 检查Wire2的连接，连接正常时返回0
 unsigned char Servo_PWM::AT24CXX_Check(void)
 {
     unsigned char temp;
-    temp = AT24CXX_ReadOneByte(Check_Addr);                                              //避免每次开机都写AT24CXX			   
-    if(temp == 0X77)
+    temp = Wire2_ReadOneByte(I2CBASEADDR, Check_Addr);                                              //避免每次开机都写Wire2			   
+    if(temp == 0X55)
     {
         return 0;
     }		   
     else                                                                                 //排除第一次初始化的情况
     {
-        AT24CXX_WriteOneByte(Check_Addr,0X77);
-        temp = AT24CXX_ReadOneByte(Check_Addr);	  
-        if(temp == 0X77)
+        Wire2_WriteOneByte(I2CBASEADDR, Check_Addr,0X55);
+        temp = Wire2_ReadOneByte(I2CBASEADDR, Check_Addr);	  
+        if(temp == 0X55)
         {
             return 0;
         }
@@ -1526,17 +1560,17 @@ void Servo_PWM::RecStr_to_Down(void)
     if(( Down_num < Group_MAX_Length ) && ( All_Offline_Group_num <= Group_MAX_NUM ))   //只能下载20个运作数据
     {
       
-      AT24CXX_Write( eeprom_AddBaisc + ( Down_Mode - 1 ) * 1341 + 67 * Down_num, tempchar, 66 );    //下载第一组数据
+      Wire2_Write( I2CBASEADDR, eeprom_AddBaisc + ( Down_Mode - 1 ) * 1341 + 67 * Down_num, tempchar, 66 );    //下载第一组数据
       delay( 5 );
-      AT24CXX_WriteOneByte(eeprom_AddBaisc+ ( Down_Mode - 1 ) *1341 + 67 * Down_num + 66, 0x01 );	 //在最后一位加一个标记，在读出时以此为标记读完
+      Wire2_WriteOneByte(I2CBASEADDR, eeprom_AddBaisc+ ( Down_Mode - 1 ) *1341 + 67 * Down_num + 66, 0x01 );	 //在最后一位加一个标记，在读出时以此为标记读完
       SerialUSB.print('A',BYTE);		//每写入一组数据，回PC机一个A，告诉PC机可以再发下一条了
       Serial1.print('A',BYTE);	
     } 
     Down_num++;		//运作数加1
   } else  {
-      AT24CXX_Write( eeprom_AddBaisc - 67, tempchar, 66 );    //下载第一组数据
+      Wire2_Write( I2CBASEADDR, eeprom_AddBaisc - 67, tempchar, 66 );    //下载第一组数据
       delay( 5 );
-      AT24CXX_WriteOneByte(eeprom_AddBaisc - 1, 0x01 );	 //在最后一位加一个标记，在读出时以此为标记读完
+      Wire2_WriteOneByte(I2CBASEADDR, eeprom_AddBaisc - 1, 0x01 );	 //在最后一位加一个标记，在读出时以此为标记读完
       SerialUSB.print('A',BYTE);		//每写入一组数据，回PC机一个A，告诉PC机可以再发下一条了
       Serial1.print('A',BYTE);
     }
@@ -1638,9 +1672,9 @@ void Servo_PWM::Deal_commands(unsigned char *str)
       {
         if( Down_Mode != 0 ) {
           All_Offline_Group_num = 48;
-          AT24CXX_WriteOneByte( Group_Length_ADDR + Down_Mode, Down_num );
-          AT24CXX_WriteOneByte( All_Group_NUM_ADDR, All_Offline_Group_num );
-          AT24CXX_WriteOneByte( Clear_Flag_ADDR, 1 );
+          Wire2_WriteOneByte( I2CBASEADDR, Group_Length_ADDR + Down_Mode, Down_num );
+          Wire2_WriteOneByte( I2CBASEADDR, All_Group_NUM_ADDR, All_Offline_Group_num );
+          Wire2_WriteOneByte( I2CBASEADDR, Clear_Flag_ADDR, 1 );
         }
         flag_Down = 0;
         Down_num = 0;
@@ -1750,13 +1784,13 @@ void Servo_PWM::Read_Data(void)
         if (Offline_group_num > All_Offline_Group_num) Offline_group_num=1;
         SerialUSB.print(Offline_group_num,DEC);
         Serial1.print(Offline_group_num,DEC);
-        Read_num = AT24CXX_ReadOneByte( Group_Length_ADDR + Offline_group_num );
+        Read_num = Wire2_ReadOneByte( I2CBASEADDR, Group_Length_ADDR + Offline_group_num );
       }
       numtemp = 0;//flag_iic_read_over=1;//读取结束
     }
     else
     {
-      AT24CXX_Read( eeprom_AddBaisc + ( Offline_group_num - 1 )*1341 + 67 * numtemp, datatemp, 67 );		   //不知道什么时候读取完了，为此在67位上增加标记。当67等到标记时，证明全读出了。可以更换PWM了。
+      Wire2_Read( I2CBASEADDR, eeprom_AddBaisc + ( Offline_group_num - 1 )*1341 + 67 * numtemp, datatemp, 67 );		   //不知道什么时候读取完了，为此在67位上增加标记。当67等到标记时，证明全读出了。可以更换PWM了。
       if ( datatemp[66] == 0x01 )  //读完数据后才开始转换
       {	
         
@@ -1782,33 +1816,33 @@ void Servo_PWM::Uart_Cmd(void)
       Serial1.println(VERSION);
     break;
     case Cmd_Clear:
-      AT24CXX_WriteOneByte( Clear_Flag_ADDR, 0xff );
+      Wire2_WriteOneByte( I2CBASEADDR, Clear_Flag_ADDR, 0xff );
       All_Offline_Group_num = 0;
       Offline_group_num = 0;
       flag_Go = 0;
-      AT24CXX_WriteOneByte( Offline_Flag_ADDR, Offline_group_num );
-      AT24CXX_WriteOneByte( All_Group_NUM_ADDR, All_Offline_Group_num );
-      AT24CXX_WriteOneByte( Circle_Flag_ADDR, flag_Go );
-      AT24CXX_Write( Group_Length_ADDR + 1, datacleartemp, Group_MAX_NUM );	 //清11-58的数据
+      Wire2_WriteOneByte( I2CBASEADDR, Offline_Flag_ADDR, Offline_group_num );
+      Wire2_WriteOneByte( I2CBASEADDR, All_Group_NUM_ADDR, All_Offline_Group_num );
+      Wire2_WriteOneByte( I2CBASEADDR, Circle_Flag_ADDR, flag_Go );
+      Wire2_Write( I2CBASEADDR, Group_Length_ADDR + 1, datacleartemp, Group_MAX_NUM );	 //清11-58的数据
       Read_num=0x00;
       SerialUSB.print('U',BYTE);
       Serial1.print('U',BYTE);
     break;
     case Cmd_Enable:
-      AT24CXX_WriteOneByte( Offline_Flag_ADDR, Offline_group_num );  //it works when 0 byte is not FF
-      Read_num = AT24CXX_ReadOneByte( Group_Length_ADDR + Offline_group_num );
+      Wire2_WriteOneByte( I2CBASEADDR, Offline_Flag_ADDR, Offline_group_num );  //it works when 0 byte is not FF
+      Read_num = Wire2_ReadOneByte( I2CBASEADDR, Group_Length_ADDR + Offline_group_num );
       flag_Go = 0;
-      AT24CXX_WriteOneByte( Circle_Flag_ADDR, flag_Go );
+      Wire2_WriteOneByte( I2CBASEADDR, Circle_Flag_ADDR, flag_Go );
       SerialUSB.print('W',BYTE);
       Serial1.print('W',BYTE);
     break;
     case Cmd_Disabled:
       Offline_group_num = 0;
       flag_Go = 0;
-      AT24CXX_WriteOneByte( Offline_Flag_ADDR, Offline_group_num );
-      AT24CXX_WriteOneByte( Circle_Flag_ADDR, flag_Go );
+      Wire2_WriteOneByte( I2CBASEADDR, Offline_Flag_ADDR, Offline_group_num );
+      Wire2_WriteOneByte( I2CBASEADDR, Circle_Flag_ADDR, flag_Go );
       delay(5);
-      AT24CXX_Read( eeprom_AddBaisc - 67, datatemp, 67 );		   //不知道什么时候读取完了，为此在67位上增加标记。当67等到标记时，证明全读出了。可以更换PWM了。
+      Wire2_Read( I2CBASEADDR, eeprom_AddBaisc - 67, datatemp, 67 );		   //不知道什么时候读取完了，为此在67位上增加标记。当67等到标记时，证明全读出了。可以更换PWM了。
       if ( datatemp[66] == 0x01 )  {//读完数据后才开始转换
 	//UART1_Send_Array(datatemp,67);
 	u8Tou16( datatemp, UartRec );//EepromData);   	UartRec
@@ -1818,7 +1852,7 @@ void Servo_PWM::Uart_Cmd(void)
       Serial1.print('W',BYTE);
     break;
     case Cmd_READ:
-      if( AT24CXX_ReadOneByte( Clear_Flag_ADDR ) == 1 ) 
+      if( Wire2_ReadOneByte( I2CBASEADDR, Clear_Flag_ADDR ) == 1 ) 
       {
         SerialUSB.print( All_Offline_Group_num,DEC);
         Serial1.print( All_Offline_Group_num,DEC);
@@ -1837,8 +1871,8 @@ void Servo_PWM::Uart_Cmd(void)
     case Cmd_GO:
       flag_Go = 1;
       Offline_group_num = 1;
-      Read_num=AT24CXX_ReadOneByte( Group_Length_ADDR + Offline_group_num );
-      AT24CXX_WriteOneByte( Circle_Flag_ADDR, flag_Go );
+      Read_num=Wire2_ReadOneByte( I2CBASEADDR, Group_Length_ADDR + Offline_group_num );
+      Wire2_WriteOneByte( I2CBASEADDR, Circle_Flag_ADDR, flag_Go );
       SerialUSB.print(1,DEC);
       Serial1.print(1,DEC);
      break;
@@ -1888,11 +1922,33 @@ void Servo_PWM::Servo_process(void)
      }
   }
 
-  iwdg_feed();    //feed watchdog
+  if (Battery_state < 50)
+  {
+      iwdg_feed();    //feed watchdog
+  }
+  else if (abs(battery_temp - Battery_state) > 80)
+  {
+      iwdg_feed();
+  }
+  else if (Battery_state > 2300)
+  {
+      iwdg_feed();
+  }
+  else
+  {
+      while (abs(battery_temp - Battery_state) < 80)
+      {
+          delay(100);
+          battery_temp = Battery_state;
+          Battery_state = analogRead(AD0);
+      }
+      iwdg_feed();
+  }
+
   /*u16Tou8(datatemp2,datatemp1);
-  AT24CXX_Write( 11 , datatemp2, 66 );;
+  Wire2_Write( 11 , datatemp2, 66 );;
   delay(5);
-  AT24CXX_Read( 100, datatemp, 66 );
+  Wire2_Read( 100, datatemp, 66 );
   for(int i=0;i<66;i++)
   {
   SerialUSB.print(datatemp[i],DEC);
