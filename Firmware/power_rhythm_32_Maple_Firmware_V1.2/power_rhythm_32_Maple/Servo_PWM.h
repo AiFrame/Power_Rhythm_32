@@ -225,6 +225,7 @@ public:
   void Set_timer_state(unsigned char state);
   void PWM_change(void);
   void Read_Data(void);
+  void Deal_Button(void);
   void Servo_process(void);
   unsigned char Wire2_ReadOneByte(unsigned char, unsigned int);
   void Wire2_WriteOneByte(unsigned char, unsigned int, unsigned char);

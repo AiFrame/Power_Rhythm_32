@@ -21,7 +21,7 @@ Servo_PWM::Servo_PWM()
 
 }
 
-const char *VERSION = "POWER RHYTHM 32 V1.2";
+const char *VERSION = "POWER RHYTHM 32 Firmware V20151109";
 const char *A_MODE[2] = {"default mode", "trapezoidal_curve mode"};
 
 unsigned int counter_20ms = 0;                          //counter for real time/20ms
@@ -66,8 +66,8 @@ unsigned char aclrt_mode = Trapezoidal_curve;           // 加速模式
 
 unsigned char pwm_num;                                  // PWM序号
 unsigned char numtemp = 0;                              // PWM数据位于对应PWM数据组的行数
-unsigned int Battery_state = 3300;                      // Battery state
-unsigned int battery_temp = 0;
+int Battery_state = 3300;                      // Battery state
+int battery_temp = 0;
 
 
 unsigned int UartRec[33] = {100, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500,      // 串口接收的PWM数据
@@ -121,6 +121,7 @@ void Servo_PWM::Servo_PWM_initialize(void)
     pinMode(S31, OUTPUT);
     pinMode(S32, OUTPUT);
     pinMode(BOARD_LED_PIN, OUTPUT);
+    pinMode(BOARD_BUTTON_PIN, INPUT);
     
     // 关闭LED
     digitalWrite(BOARD_LED_PIN,LOW);
@@ -129,34 +130,38 @@ void Servo_PWM::Servo_PWM_initialize(void)
     pinMode(AD0, INPUT_ANALOG);
     pinMode(AD1, INPUT_ANALOG);
     
+    delay(350);
+    
     Serial1.begin(115200);         // 串口1的初始化
     Battery_state = analogRead(AD0);
     if(Battery_state < 50)                                                            // 检查Flash的连接
     {  
-        SerialUSB.println("Battery no found! Check the connection.");
-        Serial1.println("Battery no found! Check the connection.");
-        SerialUSB.println("Running without battery!");
-        Serial1.println("Running without battery!");
+        SerialUSB.println("Battery is off! Running without battery!");
+        Serial1.println("Battery is off! Running without battery!");
     }
     else
     {
         while(Battery_state >= 50)                                                            // 检查Flash的连接
         {  
             toggleLED();
-            delay(750);
+            delay(350);
             battery_temp = analogRead(AD0);
-            if (abs(Battery_state - battery_temp) > 80)
+            if ((int)abs(Battery_state - battery_temp) < 100)
             {
-                SerialUSB.println("Battery no found! Check the connection.");
-                Serial1.println("Battery no found! Check the connection.");
-                SerialUSB.println("Running without battery!");
-                Serial1.println("Running without battery!");
+                if (battery_temp < 2000)
+                {
+                    SerialUSB.println("Battery low! Charge the battery.");
+                    Serial1.println("Battery low! Charge the battery.");
+                }
+                else
                 break;
             }
-            else if (battery_temp < 2300)
+            else
             {
-                SerialUSB.println("Battery low! Charge the battery.");
-                Serial1.println("Battery low! Charge the battery.");
+                SerialUSB.println("Battery no found! Running without battery!");
+                Serial1.println("Battery no found! Running without battery!");
+                Serial1.println((int)abs(Battery_state - battery_temp),DEC);
+                break;
             }
             Battery_state = battery_temp;
         }
@@ -1892,6 +1897,47 @@ void Servo_PWM::Uart_Cmd(void)
    UartCmd=Cmd_NULL;	 //	增加此值，是命令只需执行一次。
 }
 
+void Servo_PWM::Deal_Button(void)
+{
+    boolean test_mod = true;
+    if (isButtonPressed()) 
+    {
+        Set_timer_state(test_mod);
+        for(int j=1;j<33;j++)
+        {
+            PWM_value[j]=1500;
+        }
+        while(1)
+        {
+            if (isButtonPressed()) 
+            {
+                test_mod = !test_mod;
+                Set_timer_state(test_mod);
+                for(int j=1;j<33;j++)
+                {
+                    PWM_value[j]=1500;
+                }
+                digitalWrite(BOARD_LED_PIN, HIGH);
+            }
+            /*int reading = digitalRead(BOARD_BUTTON_PIN);
+            if (reading != lastButtonState) 
+            {
+                lastDebounceTime = millis();
+            }
+            if ((millis() - lastDebounceTime) > debounceDelay)
+           {
+                buttonState = reading;
+           }
+           digitalWrite(BOARD_LED_PIN, buttonState);
+           lastButtonState = reading;*/
+           iwdg_feed();
+           delay(70);
+        }
+    }
+}
+
+
+
 void Servo_PWM::Servo_process(void)
 {
   /*unsigned int datatemp1[33]={ 100, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500,
@@ -1914,29 +1960,29 @@ void Servo_PWM::Servo_process(void)
      Uart_Cmd();
      flag_RecFul = 0;
   } 
-  if ((flag_Go == 0)&&(Offline_group_num == 0))
+  if (Timer_state_flag != Timer_state)
   {
-     if (Timer_state_flag != Timer_state)
-     {
-        Set_timer_state(Timer_state_flag);
-     }
+      if ((flag_Go == 0)&&(Offline_group_num == 0)||(Timer_state_flag == 1))
+      {
+          Set_timer_state(Timer_state_flag);
+      }
   }
 
   if (Battery_state < 50)
   {
       iwdg_feed();    //feed watchdog
   }
-  else if (abs(battery_temp - Battery_state) > 80)
+  else if (abs(battery_temp - Battery_state) > 100)
   {
       iwdg_feed();
   }
-  else if (Battery_state > 2300)
+  else if (Battery_state > 2000)
   {
       iwdg_feed();
   }
   else
   {
-      while (abs(battery_temp - Battery_state) < 80)
+      while (abs(battery_temp - Battery_state) < 100)
       {
           delay(100);
           battery_temp = Battery_state;
@@ -1945,6 +1991,7 @@ void Servo_PWM::Servo_process(void)
       iwdg_feed();
   }
 
+  Deal_Button();
   /*u16Tou8(datatemp2,datatemp1);
   Wire2_Write( 11 , datatemp2, 66 );;
   delay(5);
