@@ -1917,8 +1917,10 @@ void Servo_PWM::Deal_Button(void)
                 {
                     PWM_value[j]=1500;
                 }
-                digitalWrite(BOARD_LED_PIN, HIGH);
+                digitalWrite(BOARD_LED_PIN, LOW);
             }
+            else
+            digitalWrite(BOARD_LED_PIN, HIGH);
             /*int reading = digitalRead(BOARD_BUTTON_PIN);
             if (reading != lastButtonState) 
             {
